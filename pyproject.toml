@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "development-of-conversational-ai-applications"
+version = "0.1.0"
+description = ""
+authors = ["dbashkirov <bashkirovdp@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pytelegrambotapi = "^4.17.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
