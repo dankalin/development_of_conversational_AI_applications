@@ -33,27 +33,6 @@ kb = types.InlineKeyboardMarkup(
 )
 
 
-def save_rating_to_db(user_name, rating, user_message, output_message):
-    try:
-        conn = psycopg2.connect(
-            host=db_host, database=db_name, user=db_user, password=db_password
-        )
-
-        cur = conn.cursor()
-
-        cur.execute(
-            "INSERT INTO statistics (user_name, rating, message, output_message) VALUES (%s, %s, %s,  %s)",
-            (user_name, rating, user_message, output_message),
-        )
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-    except (Exception, psycopg2.DatabaseError) as error:
-        print("Ошибка при сохранении оценки в базу данных:", error)
-
-
 @bot.message_handler(commands=["start"])
 async def send_welcome(message):
     await bot.reply_to(

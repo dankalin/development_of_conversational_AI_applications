@@ -9,11 +9,11 @@ db_password = os.getenv("DB_PASSWORD")
 
 
 def answer_with_label(text, label):
-    ans = f"""**Тема: {label2text[label]}**
+    ans = f"""Тема: {label2text[label]}
     
 Ответ: {text}
 
-__Пожалуйста, оцените мой ответ:__"""
+Пожалуйста, оцените мой ответ:"""
     return ans
 
 
