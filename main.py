@@ -4,12 +4,19 @@ from typing import List
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoModelForSequenceClassification, GenerationConfig
+from transformers import (
+    AutoTokenizer,
+    AutoModel,
+    AutoModelForCausalLM,
+    AutoModelForSequenceClassification,
+    GenerationConfig,
+)
 from fastapi import FastAPI
 from pydantic import BaseModel
 import faiss
 import os
 from peft import PeftModel, PeftConfig
+
 
 class SaigaConversation:
     def __init__(self, message_template, system_prompt, start_token_id, bot_token_id):
@@ -28,54 +35,78 @@ class SaigaConversation:
         prompt = "".join(self.message_template.format(**msg) for msg in self.messages)
         prompt += tokenizer.decode([self.start_token_id, self.bot_token_id])
         return prompt.strip()
+
+
 class InputData(BaseModel):
     text: str
+
 
 class OutputData(BaseModel):
     prediction: str
 
+
 class ClassificationInputData(BaseModel):
     text: str
+
 
 class ClassificationOutputData(BaseModel):
     label: int
 
+
 def average_pooling(hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
-    masked_hidden_states = hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
+    masked_hidden_states = hidden_states.masked_fill(
+        ~attention_mask[..., None].bool(), 0.0
+    )
     return masked_hidden_states.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
 
-def create_embeddings(texts: List[str], model: AutoModel, tokenizer: AutoTokenizer, device: torch.device) -> Tensor:
+
+def create_embeddings(
+    texts: List[str], model: AutoModel, tokenizer: AutoTokenizer, device: torch.device
+) -> Tensor:
     batch_size = 32
     embeddings = []
     for i in range(0, len(texts), batch_size):
-        batch_texts = texts[i:i+batch_size]
-        encoded_inputs = tokenizer(list(batch_texts), padding=True, truncation=True, return_tensors='pt')
+        batch_texts = texts[i : i + batch_size]
+        encoded_inputs = tokenizer(
+            list(batch_texts), padding=True, truncation=True, return_tensors="pt"
+        )
         encoded_inputs = {k: v.to(device) for k, v in encoded_inputs.items()}
         with torch.no_grad():
             model_output = model(**encoded_inputs)
-        batch_embeddings = average_pooling(model_output.last_hidden_state, encoded_inputs['attention_mask'])
+        batch_embeddings = average_pooling(
+            model_output.last_hidden_state, encoded_inputs["attention_mask"]
+        )
         batch_embeddings = F.normalize(batch_embeddings, p=2, dim=1)
         embeddings.append(batch_embeddings)
     return torch.cat(embeddings, dim=0)
+
+
 def classify_text(text):
-    encoded_input = classification_tokenizer(text, return_tensors='pt', padding=True, truncation=True).to('cpu')
+    encoded_input = classification_tokenizer(
+        text, return_tensors="pt", padding=True, truncation=True
+    ).to("cpu")
     with torch.no_grad():
         output = classification_model(**encoded_input)
     predicted_class_id = output.logits.argmax().item()
     return predicted_class_id
+
+
 def generate_response(model, tokenizer, prompt, generation_config):
     input_ids = tokenizer(prompt, return_tensors="pt").to(model.device)
     output_ids = model.generate(**input_ids, generation_config=generation_config)[0]
-    output_ids = output_ids[len(input_ids["input_ids"][0]):]
+    output_ids = output_ids[len(input_ids["input_ids"][0]) :]
     return tokenizer.decode(output_ids, skip_special_tokens=True).strip()
+
 
 app = FastAPI()
 
-embed_tokenizer = AutoTokenizer.from_pretrained('intfloat/multilingual-e5-base')
-embed_model = AutoModel.from_pretrained('intfloat/multilingual-e5-base').to('cuda:0')
+embed_tokenizer = AutoTokenizer.from_pretrained("intfloat/multilingual-e5-base")
+embed_model = AutoModel.from_pretrained("intfloat/multilingual-e5-base").to("cuda:0")
 
-df = pd.read_csv("data/row/train_dataset.csv", sep=',')
-passage_embeddings = create_embeddings(df["QUESTION"].tolist(), embed_model, embed_tokenizer, 'cuda:0')
+df = pd.read_csv("data/row/train_dataset.csv", sep=",")
+passage_embeddings = create_embeddings(
+    df["QUESTION"].tolist(), embed_model, embed_tokenizer, "cuda:0"
+)
 
 
 faiss_index_file = "faiss/faiss_index.pkl"
@@ -97,22 +128,31 @@ saiga_model = AutoModelForCausalLM.from_pretrained(
     SAIGA_BASE_MODEL_PATH,
     load_in_4bit=True,
     torch_dtype=torch.float16,
-    device_map="auto"
+    device_map="auto",
 )
-saiga_model = PeftModel.from_pretrained(saiga_model, SAIGA_MODEL_NAME, torch_dtype=torch.float16)
+saiga_model = PeftModel.from_pretrained(
+    saiga_model, SAIGA_MODEL_NAME, torch_dtype=torch.float16
+)
 saiga_model.eval()
 saiga_generation_config = GenerationConfig.from_pretrained(SAIGA_MODEL_NAME)
 
 model_name = "DeepPavlov/rubert-base-cased"
-classification_model = AutoModelForSequenceClassification.from_pretrained("train_bert/results/checkpoint-750").to("cpu")
-classification_tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=512)
+classification_model = AutoModelForSequenceClassification.from_pretrained(
+    "train_bert/results/checkpoint-750"
+).to("cpu")
+classification_tokenizer = AutoTokenizer.from_pretrained(
+    model_name, model_max_length=512
+)
+
 
 @app.post("/saiga", response_model=OutputData)
 def generate_saiga_response(input_data: InputData):
     client_request = input_data.text
 
     query_text = f"query: {client_request}"
-    query_embedding = create_embeddings([query_text], embed_model, embed_tokenizer, 'cuda:0')
+    query_embedding = create_embeddings(
+        [query_text], embed_model, embed_tokenizer, "cuda:0"
+    )
     scores, indices = faiss_index.search(query_embedding.cpu().numpy(), 4)
     top_result_idx = indices[0][0]
 
@@ -121,14 +161,15 @@ def generate_saiga_response(input_data: InputData):
         message_template=SAIGA_DEFAULT_MESSAGE_TEMPLATE,
         system_prompt=SAIGA_DEFAULT_SYSTEM_PROMPT,
         start_token_id=1,
-        bot_token_id=9225
+        bot_token_id=9225,
     )
     conversation.add_user_message(prompt)
     saiga_prompt = conversation.get_prompt(saiga_tokenizer)
 
-    saiga_response = generate_response(saiga_model, saiga_tokenizer, saiga_prompt, saiga_generation_config)
+    saiga_response = generate_response(
+        saiga_model, saiga_tokenizer, saiga_prompt, saiga_generation_config
+    )
     return OutputData(prediction=saiga_response)
-
 
 
 @app.post("/classify", response_model=ClassificationOutputData)
