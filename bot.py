@@ -14,10 +14,6 @@ PORT = "8080"
 
 URL = os.getenv("URL")
 token = os.getenv("API_TOKEN")
-db_host = os.getenv("DB_HOST")
-db_name = os.getenv("DB_NAME")
-db_user = os.getenv("DB_USER")
-db_password = os.getenv("DB_PASSWORD")
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename="bot.log", encoding="utf-8", level=logging.DEBUG)
