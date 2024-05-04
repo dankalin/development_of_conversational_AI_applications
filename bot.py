@@ -6,6 +6,7 @@ import os
 import requests
 from utils import answer_with_label, save_rating_to_db
 import logging
+import psycopg2
 
 load_dotenv()
 
@@ -32,6 +33,29 @@ kb = types.InlineKeyboardMarkup([
         types.InlineKeyboardButton(text='5', callback_data='btn_types_5'),
     ]
 ])
+
+
+def save_rating_to_db(user_name, rating, user_message):
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            database=db_name,
+            user=db_user,
+            password=db_password
+        )
+
+        cur = conn.cursor()
+
+        cur.execute("INSERT INTO statistic (user_name, rating, message) VALUES (%s, %s, %s)",
+                    (user_name, rating, user_message))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Ошибка при сохранении оценки в базу данных:", error)
+
 
 @bot.message_handler(commands=['start'])
 async def send_welcome(message):
@@ -77,7 +101,7 @@ async def callback_worker(call):
     username = call.from_user.username if call.from_user.username else call.from_user.first_name
     user_message = call.message.json["reply_to_message"]["text"]
     logger.info(f"{username} rated {user_message} as {rating}")
-    # save_rating_to_db(username, rating, user_message)
+    save_rating_to_db(username, rating, user_message)
     await bot.send_message(call.from_user.id, "Спасибо за вашу оценку!")
 
 asyncio.run(bot.polling())
