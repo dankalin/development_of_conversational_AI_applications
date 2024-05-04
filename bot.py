@@ -101,7 +101,7 @@ async def callback_worker(call):
     username = call.from_user.username if call.from_user.username else call.from_user.first_name
     user_message = call.message.json["reply_to_message"]["text"]
     logger.info(f"{username} rated {user_message} as {rating}")
-    save_rating_to_db(username, rating, user_message)
+    save_rating_to_db(username, rating, user_message,output_message)
     await bot.send_message(call.from_user.id, "Спасибо за вашу оценку!")
 
 asyncio.run(bot.polling())
