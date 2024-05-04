@@ -35,7 +35,7 @@ kb = types.InlineKeyboardMarkup([
 ])
 
 
-def save_rating_to_db(user_name, rating, user_message):
+def save_rating_to_db(user_name, rating, user_message,output_message):
     try:
         conn = psycopg2.connect(
             host=db_host,
@@ -46,8 +46,8 @@ def save_rating_to_db(user_name, rating, user_message):
 
         cur = conn.cursor()
 
-        cur.execute("INSERT INTO statistic (user_name, rating, message) VALUES (%s, %s, %s)",
-                    (user_name, rating, user_message))
+        cur.execute("INSERT INTO statistics (user_name, rating, message, output_message) VALUES (%s, %s, %s,  %s)",
+                    (user_name, rating, user_message,output_message))
 
         conn.commit()
         cur.close()
