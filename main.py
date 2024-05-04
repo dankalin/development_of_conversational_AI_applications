@@ -93,7 +93,7 @@ def classify_text(text):
 
 def generate_response(model, tokenizer, prompt, generation_config):
     input_ids = tokenizer(prompt, return_tensors="pt").to(model.device)
-    output_ids = model.generate(**input_ids, generation_config=generation_config)[0]
+    output_ids = model.generate(**input_ids, generation_config=generation_config,temperature=0.001)[0]
     output_ids = output_ids[len(input_ids["input_ids"][0]) :]
     return tokenizer.decode(output_ids, skip_special_tokens=True).strip()
 

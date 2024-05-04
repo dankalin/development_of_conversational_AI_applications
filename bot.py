@@ -4,20 +4,19 @@ from telebot import types
 from dotenv import load_dotenv
 import os
 import requests
-from src.utils import answer_with_label, save_rating_to_db
+from src.utils import answer_with_label
 import logging
 import psycopg2
 
 load_dotenv()
 
-URL = "https://helping-fwd-ladies-clearance.trycloudflare.com"
 PORT = "8080"
-
-token = os.getenv("API_TOKEN")
 db_host = os.getenv("DB_HOST")
 db_name = os.getenv("DB_NAME")
 db_user = os.getenv("DB_USER")
 db_password = os.getenv("DB_PASSWORD")
+URL = os.getenv("URL")
+token = os.getenv("API_TOKEN")
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename="bot.log", encoding="utf-8", level=logging.DEBUG)
@@ -56,8 +55,6 @@ def save_rating_to_db(user_name, rating, user_message, output_message):
 
     except (Exception, psycopg2.DatabaseError) as error:
         print("Ошибка при сохранении оценки в базу данных:", error)
-
-
 @bot.message_handler(commands=["start"])
 async def send_welcome(message):
     await bot.reply_to(
