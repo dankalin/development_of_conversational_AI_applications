@@ -5,26 +5,15 @@ import torch.nn.functional as F
 import torch
 from torch import Tensor
 from transformers import AutoTokenizer, AutoModel
-import re
 from fastapi import FastAPI
 from pydantic import BaseModel
-
+import faiss
+import os
 from peft import PeftModel, PeftConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
-from ru_rag.serve import populate_db, find_similar
-from ru_rag.serve import answer
-
-# from ru_rag.utils import download_llama_model
-import os
-from dotenv import load_dotenv, find_dotenv
-
-
 class InputData(BaseModel):
     text: str
-
-
-# Определяем модель данных для выходных параметров
 class OutputData(BaseModel):
     prediction: str
 
@@ -64,29 +53,9 @@ passage_embeddings = create_embeddings(texts=df["QUESTION"].to_list(),model=mode
 app = FastAPI()
 
 
-@app.post("/new_find_similar", response_model=OutputData)
-def predict_new_find_similar(input_data: InputData):
-    client_request = input_data.text
-    query_text = f"query: {client_request}"
-
-    query_batch_dict = tokenizer([query_text], max_length=512, padding=True, truncation=True, return_tensors='pt')
-    query_outputs = model(**query_batch_dict.to(device))
-    query_embedding = average_pool(query_outputs.last_hidden_state, query_batch_dict['attention_mask'])
-    query_embedding = F.normalize(query_embedding, p=2, dim=1)
-    scores = (query_embedding @ passage_embeddings.T) * 100
-
-    scores = scores[0].cpu().detach().numpy()
-    top_3_results = np.argsort(scores)[-4:][::-1] if len(scores) >= 4 else np.argsort(scores)
-
-    answer = "\n\n".join([f"Вопрос: {df.iloc[idx, 0]}\t\tОтвет: {df.iloc[idx, 1]}" for idx in top_3_results])
-
-    return OutputData(prediction=answer)
-
-
-
 SAIGA_MODEL_NAME = "IlyaGusev/saiga2_7b_lora"
 SAIGA_BASE_MODEL_PATH = "TheBloke/Llama-2-7B-fp16"
-# BASE_MODEL_PATH = "meta-llama/Llama-2-7b-hf"
+
 SAIGA_DEFAULT_MESSAGE_TEMPLATE = "<s>{role}\n{content}</s>\n"
 SAIGA_DEFAULT_SYSTEM_PROMPT = "Ты — Сайга, русскоязычный автоматический ассистент. Ты разговариваешь с людьми и помогаешь им."
 
@@ -163,11 +132,17 @@ SAIGA_model = PeftModel.from_pretrained(
 SAIGA_model.eval()
 
 generation_config = GenerationConfig.from_pretrained(SAIGA_MODEL_NAME)
-print(generation_config)
 
+faiss_index_file = "faiss/faiss_index.pkl"
+if os.path.exists(faiss_index_file):
+    index = faiss.read_index(faiss_index_file)
+else:
+    embedding_dim = passage_embeddings.shape[1]
+    index = faiss.IndexFlatIP(embedding_dim)
+    index.add(passage_embeddings.cpu().numpy())
+    faiss.write_index(index, faiss_index_file)
 
-
-@app.post("/new_find_similar_saiga", response_model=OutputData)
+@app.post("/saiga", response_model=OutputData)
 def predict_new_find_similar_saiga(input_data: InputData):
     client_request = input_data.text
 
@@ -176,10 +151,9 @@ def predict_new_find_similar_saiga(input_data: InputData):
     query_outputs = model(**query_batch_dict.to(device))
     query_embedding = average_pool(query_outputs.last_hidden_state, query_batch_dict['attention_mask'])
     query_embedding = F.normalize(query_embedding, p=2, dim=1)
-    scores = (query_embedding @ passage_embeddings.T) * 100
 
-    scores = scores[0].cpu().detach().numpy()
-    top_3_results = np.argsort(scores)[-4:][::-1] if len(scores) >= 4 else np.argsort(scores)
+    scores, indices = index.search(query_embedding.cpu().detach().numpy(), 4)
+    top_3_results = indices[0]
 
     inp = f"У меня есть вопрос: {client_request}. Также у меня есть ответ: {str(df.iloc[top_3_results[0], 1])}. На основе этого ответа коротко ответь на исходный вопрос."
     conversation = Conversation()
@@ -188,21 +162,4 @@ def predict_new_find_similar_saiga(input_data: InputData):
 
     output = generate(SAIGA_model, SAIGA_tokenizer, prompt, generation_config)
 
-    # answer = f"Вопрос: {client_request}\n\nОтвет Cайги: {output}\n\nТоп максимально похожих результатов:\n\n"
-    # answer += "\n\n".join([f"Вопрос: {df.iloc[idx, 0]}\t\tОтвет: {df.iloc[idx, 1]}" for idx in top_3_results])
-
     return OutputData(prediction=output)
-
-@app.post("/test_mock", response_model=OutputData)
-def test_mock(input_data: InputData):
-    # Получаем входные параметры
-    client_request = input_data.text
-
-    prediction: dict[str, str] = {
-        "prediction": "Тизера нет\n\nВсе еще нет"
-    }
-    # Возвращаем предсказание в виде объекта OutputData
-    return OutputData(prediction=str(prediction))
-
-
-

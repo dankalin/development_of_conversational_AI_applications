@@ -7,7 +7,7 @@ import requests
 load_dotenv()
 
 URL = "http://0.0.0.0"
-PORT = "8080"
+PORT = "8084"
 
 
 token = os.getenv("API_TOKEN")
