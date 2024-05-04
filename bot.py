@@ -4,19 +4,14 @@ from telebot import types
 from dotenv import load_dotenv
 import os
 import requests
-from utils import answer_with_label
+from utils import answer_with_label, save_rating_to_db
 import logging
-# import psycopg2
 
 load_dotenv()
 
 URL = "https://helping-fwd-ladies-clearance.trycloudflare.com"
 PORT = "8080"
 token = os.getenv("API_TOKEN")
-db_host = os.getenv("DB_HOST")
-db_name = os.getenv("DB_NAME")
-db_user = os.getenv("DB_USER")
-db_password = os.getenv("DB_PASSWORD")
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename='bot.log', encoding='utf-8', level=logging.DEBUG)
@@ -25,11 +20,11 @@ bot = AsyncTeleBot(token)
 
 kb = types.InlineKeyboardMarkup([
     [
-        types.InlineKeyboardButton(text='1', callback_data='btn_types'),
-        types.InlineKeyboardButton(text='2', callback_data='btn_types'),
-        types.InlineKeyboardButton(text='3', callback_data='btn_types'),
-        types.InlineKeyboardButton(text='4', callback_data='btn_types'),
-        types.InlineKeyboardButton(text='5', callback_data='btn_types'),
+        types.InlineKeyboardButton(text='1', callback_data='btn_types_1'),
+        types.InlineKeyboardButton(text='2', callback_data='btn_types_2'),
+        types.InlineKeyboardButton(text='3', callback_data='btn_types_3'),
+        types.InlineKeyboardButton(text='4', callback_data='btn_types_4'),
+        types.InlineKeyboardButton(text='5', callback_data='btn_types_5'),
     ]
 ])
 
@@ -71,7 +66,13 @@ async def message(message):
         logger.error(res_saiga.text)
         await bot.reply_to(message, "Произошла ошибка при обработке запроса.")
 
-# @bot.message_handler(func=lambda message: True)
-# def process_rating(func=lambda mesage: )
+@bot.callback_query_handler(func=lambda call: True) 
+async def callback_worker(call):
+    rating = call.data.split("_")[2]
+    username = call.from_user.username if call.from_user.username else call.from_user.first_name
+    user_message = call.message.json["reply_to_message"]["text"]
+    logger.info(f"{username} rated {user_message} as {rating}")
+    # save_rating_to_db(username, rating, user_message)
+    await bot.send_message(call.from_user.id, "Спасибо за вашу оценку!")
 
 asyncio.run(bot.polling())
