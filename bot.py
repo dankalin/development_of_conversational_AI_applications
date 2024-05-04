@@ -10,9 +10,9 @@ import psycopg2
 
 load_dotenv()
 
-URL = "https://helping-fwd-ladies-clearance.trycloudflare.com"
 PORT = "8080"
 
+URL = os.getenv("URL")
 token = os.getenv("API_TOKEN")
 db_host = os.getenv("DB_HOST")
 db_name = os.getenv("DB_NAME")
