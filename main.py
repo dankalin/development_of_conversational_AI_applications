@@ -4,7 +4,7 @@ from typing import List
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, GenerationConfig
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, AutoModelForSequenceClassification, GenerationConfig
 from fastapi import FastAPI
 from pydantic import BaseModel
 import faiss
@@ -34,6 +34,12 @@ class InputData(BaseModel):
 class OutputData(BaseModel):
     prediction: str
 
+class ClassificationInputData(BaseModel):
+    text: str
+
+class ClassificationOutputData(BaseModel):
+    label: int
+
 def average_pooling(hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
     masked_hidden_states = hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
     return masked_hidden_states.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
@@ -51,7 +57,12 @@ def create_embeddings(texts: List[str], model: AutoModel, tokenizer: AutoTokeniz
         batch_embeddings = F.normalize(batch_embeddings, p=2, dim=1)
         embeddings.append(batch_embeddings)
     return torch.cat(embeddings, dim=0)
-
+def classify_text(text):
+    encoded_input = classification_tokenizer(text, return_tensors='pt', padding=True, truncation=True).to('cpu')
+    with torch.no_grad():
+        output = classification_model(**encoded_input)
+    predicted_class_id = output.logits.argmax().item()
+    return predicted_class_id
 def generate_response(model, tokenizer, prompt, generation_config):
     input_ids = tokenizer(prompt, return_tensors="pt").to(model.device)
     output_ids = model.generate(**input_ids, generation_config=generation_config)[0]
@@ -92,6 +103,9 @@ saiga_model = PeftModel.from_pretrained(saiga_model, SAIGA_MODEL_NAME, torch_dty
 saiga_model.eval()
 saiga_generation_config = GenerationConfig.from_pretrained(SAIGA_MODEL_NAME)
 
+model_name = "DeepPavlov/rubert-base-cased"
+classification_model = AutoModelForSequenceClassification.from_pretrained("train_bert/results/checkpoint-750").to("cpu")
+classification_tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=512)
 
 @app.post("/saiga", response_model=OutputData)
 def generate_saiga_response(input_data: InputData):
@@ -114,3 +128,11 @@ def generate_saiga_response(input_data: InputData):
 
     saiga_response = generate_response(saiga_model, saiga_tokenizer, saiga_prompt, saiga_generation_config)
     return OutputData(prediction=saiga_response)
+
+
+
+@app.post("/classify", response_model=ClassificationOutputData)
+def classify_text_endpoint(input_data: ClassificationInputData):
+    text = input_data.text
+    predicted_class_id = classify_text(text)
+    return ClassificationOutputData(label=predicted_class_id)
