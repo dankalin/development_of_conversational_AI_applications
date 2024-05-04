@@ -4,14 +4,17 @@ from telebot import types
 from dotenv import load_dotenv
 import os
 import requests
-from src.utils import answer_with_label, save_rating_to_db
+from src.utils import answer_with_label
 import logging
 import psycopg2
 
 load_dotenv()
 
 PORT = "8080"
-
+db_host = os.getenv("DB_HOST")
+db_name = os.getenv("DB_NAME")
+db_user = os.getenv("DB_USER")
+db_password = os.getenv("DB_PASSWORD")
 URL = os.getenv("URL")
 token = os.getenv("API_TOKEN")
 
@@ -33,6 +36,25 @@ kb = types.InlineKeyboardMarkup(
 )
 
 
+def save_rating_to_db(user_name, rating, user_message, output_message):
+    try:
+        conn = psycopg2.connect(
+            host=db_host, database=db_name, user=db_user, password=db_password
+        )
+
+        cur = conn.cursor()
+
+        cur.execute(
+            "INSERT INTO statistics (user_name, rating, message, output_message) VALUES (%s, %s, %s,  %s)",
+            (user_name, rating, user_message, output_message),
+        )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except (Exception, psycopg2.DatabaseError) as error:
+        print("Ошибка при сохранении оценки в базу данных:", error)
 @bot.message_handler(commands=["start"])
 async def send_welcome(message):
     await bot.reply_to(
